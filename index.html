@@ -245,20 +245,35 @@
             </div>
         </div>
 
-        <!-- 2. Main Categories (TABS) - Horizontal Scroll -->
-        <div class="px-4 py-2 border-b border-slate-100 overflow-x-auto no-scrollbar flex space-x-2 bg-slate-50/50">
-            <button @click="setMainCategory('All')" 
-                class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors"
-                :class="activeMainCat === 'All' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'"
-            >All</button>
-            
-            <template x-for="cat in mainCategories" :key="cat">
-                <button @click="setMainCategory(cat)" 
-                    class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                    :class="activeMainCat === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
-                    x-text="cat"
-                ></button>
-            </template>
+        <!-- 2. Main Categories (TABS) - Collapsible Grid -->
+        <div class="px-4 py-2 border-b border-slate-100 bg-slate-50/50 relative" x-data="{ expanded: false }">
+            <!-- Grid Container with toggleable max-height -->
+            <!-- max-h-[38px] shows exactly one row (button height ~32px + gap) -->
+            <div class="flex flex-wrap gap-2 pr-8 transition-[max-height] duration-300 ease-in-out overflow-hidden"
+                 :class="expanded ? 'max-h-[500px]' : 'max-h-[38px]'">
+                
+                <button @click="setMainCategory('All')" 
+                    class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
+                    :class="activeMainCat === 'All' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'"
+                >All</button>
+                
+                <template x-for="cat in mainCategories" :key="cat">
+                    <button @click="setMainCategory(cat)" 
+                        class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+                        :class="activeMainCat === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
+                        x-text="cat"
+                    ></button>
+                </template>
+            </div>
+
+            <!-- Expand Toggle Button (Only shows if we have categories) -->
+            <button 
+                x-show="mainCategories.length > 0" 
+                @click="expanded = !expanded" 
+                class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-500 hover:text-blue-600 transition-colors z-10"
+            >
+                <i class="fas" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
         </div>
 
         <!-- 3. Sub Categories (TAGS) - Filter Chips -->
