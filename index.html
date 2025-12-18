@@ -8,13 +8,12 @@
     <!-- PWA & Mobile Icons (iOS - Safari) -->
     <link rel="icon" type="image/png" href="https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png">
     <link rel="apple-touch-icon" href="https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png">
-    <meta name="apple-mobile-web-app-title" content="Foxlink Profile">
+    <meta name="apple-mobile-web-app-title" content="Foxlink Kit">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#ffffff">
 
     <!-- PWA Manifest (Android/Chrome - Standard File) -->
-    <!-- 這行指示瀏覽器去讀取旁邊的 manifest.json 檔案 -->
     <link rel="manifest" href="manifest.json">
 
     <!-- Tailwind CSS -->
@@ -41,6 +40,13 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('salesApp', () => ({
+                // --- Auth State ---
+                authenticated: false,
+                passwordInput: '',
+                rememberMe: false,
+                authError: false,
+                
+                // --- App State ---
                 loading: true,
                 error: false,
                 errorMessage: '',
@@ -69,10 +75,45 @@
 
                 // Lifecycle Hook
                 init() {
-                    this.initData();
+                    this.checkAuth();
+                },
+
+                // --- Auth Logic ---
+                checkAuth() {
+                    const savedAuth = localStorage.getItem('foxlink_kit_auth');
+                    if (savedAuth === 'true') {
+                        this.authenticated = true;
+                        this.initData();
+                    } else {
+                        // Focus password input automatically if on desktop
+                        this.$nextTick(() => {
+                            if(window.innerWidth > 768) {
+                                document.getElementById('passInput')?.focus();
+                            }
+                        });
+                    }
+                },
+
+                login() {
+                    if (this.passwordInput === '1234') {
+                        this.authenticated = true;
+                        this.authError = false;
+                        if (this.rememberMe) {
+                            localStorage.setItem('foxlink_kit_auth', 'true');
+                        }
+                        this.initData();
+                    } else {
+                        this.authError = true;
+                        this.passwordInput = '';
+                        // Vibrate phone on error (if supported)
+                        if (navigator.vibrate) navigator.vibrate(200);
+                    }
                 },
 
                 initData(forceReload = false) {
+                    // Only fetch data if authenticated
+                    if (!this.authenticated) return;
+
                     console.log("Fetching CSV...", forceReload ? "(Forced Refresh)" : "");
                     if (typeof Papa === 'undefined') {
                         console.error("PapaParse not loaded");
@@ -81,10 +122,8 @@
                     
                     this.loading = true;
                     this.error = false;
-                    // Note: We don't clear items immediately on forced reload to prevent flashing
                     if (!forceReload) this.items = []; 
 
-                    // Cache Busting
                     let fetchUrl = this.baseUrl;
                     if (forceReload) {
                         fetchUrl += '&_cb=' + Date.now();
@@ -101,11 +140,8 @@
                                 return;
                             }
 
-                            // --- SMART COLUMN DETECTION ---
                             const sampleRow = results.data[0];
                             const keys = Object.keys(sampleRow);
-                            console.log("Detected CSV Headers:", keys);
-
                             const findKey = (candidates) => keys.find(k => candidates.some(c => k.toLowerCase().includes(c.toLowerCase())));
 
                             const mainCatKey = findKey(['Main_Category', 'Company', 'Category']) || 'Main_Category_Company';
@@ -113,28 +149,20 @@
                             const titleKey = findKey(['en', 'Title_EN', 'English', 'Title']) || 'en';
                             const linkKey = findKey(['link', 'url', 'href']) || 'link';
 
-                            console.log("Mapped Columns:", { mainCatKey, subCatKey, titleKey, linkKey });
-
-                            // --- PROCESS DATA ---
                             const mainCatsSet = new Set();
                             const subTagsSet = new Set();
                             
-                            // Map items and assign a unique ID to each
                             const parsedItems = results.data.map((row, index) => {
                                 const mainCat = (row[mainCatKey] || 'Uncategorized').trim();
                                 const subCatRaw = (row[subCatKey] || '').trim();
-                                
                                 const title = row[titleKey] || row['Title_TW'] || row['tw'] || 'Untitled';
                                 const link = row[linkKey] || '#';
-                                
                                 const tags = subCatRaw ? subCatRaw.split(',').map(t => t.trim()) : [];
 
                                 if (mainCat && mainCat !== 'Uncategorized') mainCatsSet.add(mainCat);
                                 tags.forEach(t => subTagsSet.add(t));
 
-                                // CRITICAL FIX: Generate unique ID using index and timestamp to prevent key collision errors
                                 const uniqueId = `item-${index}-${Date.now()}`;
-
                                 return { id: uniqueId, title, link, mainCat, tags };
                             })
                             .filter(item => item.title !== 'Untitled' || item.link !== '#');
@@ -143,7 +171,6 @@
                             this.mainCategories = Array.from(mainCatsSet).sort();
                             this.subTags = Array.from(subTagsSet).sort();
                             
-                            console.log("Loaded Items:", this.items.length);
                             this.loading = false;
                             
                             if (forceReload) {
@@ -228,140 +255,180 @@
     </script>
 </head>
 
-<body class="text-slate-800" x-data="salesApp">
+<body class="text-slate-800 bg-slate-50" x-data="salesApp">
 
-    <!-- Header Section -->
-    <div class="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
-        <!-- 1. Top Bar: Logo & Actions -->
-        <div class="px-4 py-2 flex justify-between items-center border-b border-slate-100 bg-white">
-            
-            <!-- Logo with Secret Click -->
-            <div @click="handleSecretClick()" class="cursor-pointer select-none py-1 active:opacity-70 transition-opacity" title="Tap 7 times to edit">
-                <img src="https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png" alt="Foxlink Sales Kit" class="h-8 w-auto object-contain">
+    <!-- LOGIN MODAL (Covers everything when not authenticated) -->
+    <div x-show="!authenticated" class="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center p-6" x-cloak>
+        <div class="w-full max-w-sm bg-white">
+            <div class="text-center mb-8">
+                <img src="https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png" alt="Foxlink" class="h-10 mx-auto mb-4 object-contain">
+                <h2 class="text-xl font-bold text-slate-800">Sales Kit Access</h2>
+                <p class="text-sm text-slate-500 mt-1">Please enter passcode to continue</p>
             </div>
 
-            <!-- Right: Reload & Search -->
-            <div class="flex items-center gap-3 flex-1 justify-end max-w-[240px]">
-                
-                <!-- Reload Button -->
-                <button @click="forceReload()" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Reload Data">
-                    <i class="fas fa-sync-alt" :class="loading ? 'fa-spin text-blue-500' : ''"></i>
-                </button>
-
-                <!-- Search Bar -->
-                <div class="relative w-full">
-                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                    <input type="text" x-model="search" placeholder="Search..." 
-                        class="w-full bg-slate-100 text-sm rounded-full pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all focus:bg-white border border-transparent focus:border-blue-200">
+            <form @submit.prevent="login" class="space-y-4">
+                <div>
+                    <input 
+                        id="passInput"
+                        type="tel" 
+                        x-model="passwordInput" 
+                        placeholder="Enter Passcode" 
+                        maxlength="4"
+                        class="w-full text-center text-2xl tracking-[0.5em] font-bold text-slate-800 border-b-2 border-slate-200 py-3 focus:outline-none focus:border-blue-600 transition-colors bg-transparent placeholder:tracking-normal placeholder:font-normal placeholder:text-base"
+                        :class="authError ? 'border-red-500 text-red-500' : ''"
+                    >
+                    <p x-show="authError" class="text-red-500 text-xs text-center mt-2" x-cloak>Incorrect passcode</p>
                 </div>
+
+                <div class="flex items-center justify-center py-2">
+                    <label class="flex items-center space-x-2 cursor-pointer select-none">
+                        <input type="checkbox" x-model="rememberMe" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-slate-500">Remember me</span>
+                    </label>
+                </div>
+
+                <button 
+                    type="submit" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-200 active:scale-95 flex justify-center items-center gap-2">
+                    <span>Enter</span>
+                    <i class="fas fa-arrow-right text-xs"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTENT (Only visible when authenticated) -->
+    <div x-show="authenticated" x-cloak>
+        
+        <!-- Header Section -->
+        <div class="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
+            <!-- 1. Top Bar: Logo & Actions -->
+            <div class="px-4 py-2 flex justify-between items-center border-b border-slate-100 bg-white">
+                
+                <!-- Logo with Secret Click -->
+                <div @click="handleSecretClick()" class="cursor-pointer select-none py-1 active:opacity-70 transition-opacity" title="Tap 7 times to edit">
+                    <img src="https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png" alt="Foxlink Sales Kit" class="h-8 w-auto object-contain">
+                </div>
+
+                <!-- Right: Reload & Search -->
+                <div class="flex items-center gap-3 flex-1 justify-end max-w-[240px]">
+                    
+                    <!-- Reload Button -->
+                    <button @click="forceReload()" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Reload Data">
+                        <i class="fas fa-sync-alt" :class="loading ? 'fa-spin text-blue-500' : ''"></i>
+                    </button>
+
+                    <!-- Search Bar -->
+                    <div class="relative w-full">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input type="text" x-model="search" placeholder="Search..." 
+                            class="w-full bg-slate-100 text-sm rounded-full pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all focus:bg-white border border-transparent focus:border-blue-200">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Main Categories (TABS) - Collapsible Grid -->
+            <div class="px-4 py-2 border-b border-slate-100 bg-slate-50/50 relative" x-data="{ expanded: false }">
+                <div class="flex flex-wrap gap-2 pr-8 transition-[max-height] duration-300 ease-in-out overflow-hidden"
+                     :class="expanded ? 'max-h-[500px]' : 'max-h-[38px]'">
+                    
+                    <button @click="setMainCategory('All')" 
+                        class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
+                        :class="activeMainCat === 'All' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'"
+                    >All</button>
+                    
+                    <template x-for="cat in mainCategories" :key="cat">
+                        <button @click="setMainCategory(cat)" 
+                            class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+                            :class="activeMainCat === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
+                            x-text="cat"
+                        ></button>
+                    </template>
+                </div>
+
+                <button 
+                    x-show="mainCategories.length > 0" 
+                    @click="expanded = !expanded" 
+                    class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-500 hover:text-blue-600 transition-colors z-10"
+                >
+                    <i class="fas" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                </button>
+            </div>
+
+            <!-- 3. Sub Categories (TAGS) - Filter Chips -->
+            <div class="px-4 py-2 bg-white flex flex-wrap gap-2 shadow-sm min-h-[44px]" x-show="subTags.length > 0">
+                <div class="text-[10px] uppercase font-bold text-slate-400 py-1.5">Filter:</div>
+                <template x-for="tag in subTags" :key="tag">
+                    <button @click="toggleTag(tag)" 
+                        class="px-2.5 py-1 rounded-md text-xs font-medium border transition-all active:scale-95"
+                        :class="selectedTags.includes(tag) ? 'bg-blue-50 border-blue-200 text-blue-600 ring-1 ring-blue-500' : 'bg-slate-50 border-slate-100 text-slate-500'"
+                    >
+                        <span x-text="tag"></span>
+                    </button>
+                </template>
+                <button x-show="selectedTags.length > 0" @click="selectedTags = []" class="text-xs text-slate-400 underline decoration-dotted ml-auto">Clear</button>
             </div>
         </div>
 
-        <!-- 2. Main Categories (TABS) - Collapsible Grid -->
-        <div class="px-4 py-2 border-b border-slate-100 bg-slate-50/50 relative" x-data="{ expanded: false }">
-            <!-- Grid Container with toggleable max-height -->
-            <!-- max-h-[38px] shows exactly one row (button height ~32px + gap) -->
-            <div class="flex flex-wrap gap-2 pr-8 transition-[max-height] duration-300 ease-in-out overflow-hidden"
-                 :class="expanded ? 'max-h-[500px]' : 'max-h-[38px]'">
-                
-                <button @click="setMainCategory('All')" 
-                    class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
-                    :class="activeMainCat === 'All' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'"
-                >All</button>
-                
-                <template x-for="cat in mainCategories" :key="cat">
-                    <button @click="setMainCategory(cat)" 
-                        class="whitespace-nowrap px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
-                        :class="activeMainCat === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
-                        x-text="cat"
-                    ></button>
+        <!-- Content List -->
+        <div class="pt-[150px] pb-10 px-4 max-w-2xl mx-auto min-h-screen">
+            
+            <!-- Loading -->
+            <div x-show="loading" class="text-center py-10 text-slate-400">
+                <i class="fas fa-spinner fa-spin fa-2x mb-2 text-blue-500"></i>
+                <p class="text-xs">Updating Database...</p>
+            </div>
+
+            <!-- Error -->
+            <div x-show="error" class="bg-red-50 text-red-600 p-4 rounded-lg text-sm text-center my-4" x-text="errorMessage"></div>
+
+            <!-- Items -->
+            <div x-show="!loading" class="space-y-3">
+                <template x-for="item in filteredItems" :key="item.id">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-start active:scale-[0.99] transition-transform" @click="openLink(item.link)">
+                        <!-- Icon -->
+                        <div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-xl mr-3 shrink-0"
+                             :class="isPdf(item.link) ? 'text-red-500' : 'text-blue-500'">
+                            <i class="fas" :class="isPdf(item.link) ? 'fa-file-pdf' : 'fa-link'"></i>
+                        </div>
+
+                        <!-- Texts -->
+                        <div class="flex-1 min-w-0">
+                            <!-- Upper Labels -->
+                            <div class="flex gap-1 mb-1">
+                                <span class="text-[10px] font-bold bg-slate-800 text-white px-1.5 py-0.5 rounded" x-text="item.mainCat"></span>
+                                <template x-for="t in item.tags">
+                                    <span class="text-[10px] font-medium bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded" x-text="t"></span>
+                                </template>
+                            </div>
+                            
+                            <h3 class="text-sm font-semibold text-slate-900 leading-tight mb-0.5" x-text="item.title"></h3>
+                            <div class="text-[11px] text-slate-400 truncate" x-text="shortLink(item.link)"></div>
+                        </div>
+
+                        <!-- Copy Btn -->
+                        <button @click.stop="copyLink(item.link)" class="text-slate-300 hover:text-blue-500 p-2 ml-1">
+                            <i class="far fa-copy text-lg"></i>
+                        </button>
+                    </div>
                 </template>
             </div>
-
-            <!-- Expand Toggle Button (Only shows if we have categories) -->
-            <button 
-                x-show="mainCategories.length > 0" 
-                @click="expanded = !expanded" 
-                class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-500 hover:text-blue-600 transition-colors z-10"
-            >
-                <i class="fas" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-            </button>
+            
+            <!-- Empty -->
+            <div x-show="!loading && filteredItems.length === 0" class="text-center py-12 text-slate-400">
+                <i class="fas fa-inbox text-3xl mb-2"></i>
+                <p class="text-sm">No items found.</p>
+            </div>
         </div>
 
-        <!-- 3. Sub Categories (TAGS) - Filter Chips -->
-        <div class="px-4 py-2 bg-white flex flex-wrap gap-2 shadow-sm min-h-[44px]" x-show="subTags.length > 0">
-            <div class="text-[10px] uppercase font-bold text-slate-400 py-1.5">Filter:</div>
-            <template x-for="tag in subTags" :key="tag">
-                <button @click="toggleTag(tag)" 
-                    class="px-2.5 py-1 rounded-md text-xs font-medium border transition-all active:scale-95"
-                    :class="selectedTags.includes(tag) ? 'bg-blue-50 border-blue-200 text-blue-600 ring-1 ring-blue-500' : 'bg-slate-50 border-slate-100 text-slate-500'"
-                >
-                    <span x-text="tag"></span>
-                </button>
-            </template>
-            <button x-show="selectedTags.length > 0" @click="selectedTags = []" class="text-xs text-slate-400 underline decoration-dotted ml-auto">Clear</button>
+        <!-- Toast -->
+        <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-medium shadow-lg z-50 flex items-center gap-2 pointer-events-none transition-all duration-300 transform"
+             :class="showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'">
+            <i class="fas fa-check text-green-400"></i> <span x-text="toastMessage"></span>
         </div>
     </div>
 
-    <!-- Content List -->
-    <div class="pt-[150px] pb-10 px-4 max-w-2xl mx-auto min-h-screen">
-        
-        <!-- Loading -->
-        <div x-show="loading" class="text-center py-10 text-slate-400">
-            <i class="fas fa-spinner fa-spin fa-2x mb-2 text-blue-500"></i>
-            <p class="text-xs">Updating Database...</p>
-        </div>
-
-        <!-- Error -->
-        <div x-show="error" class="bg-red-50 text-red-600 p-4 rounded-lg text-sm text-center my-4" x-text="errorMessage"></div>
-
-        <!-- Items -->
-        <div x-show="!loading" class="space-y-3">
-            <!-- CRITICAL FIX: Changed :key from item.link to item.id to ensure uniqueness -->
-            <template x-for="item in filteredItems" :key="item.id">
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-start active:scale-[0.99] transition-transform" @click="openLink(item.link)">
-                    <!-- Icon -->
-                    <div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-xl mr-3 shrink-0"
-                         :class="isPdf(item.link) ? 'text-red-500' : 'text-blue-500'">
-                        <i class="fas" :class="isPdf(item.link) ? 'fa-file-pdf' : 'fa-link'"></i>
-                    </div>
-
-                    <!-- Texts -->
-                    <div class="flex-1 min-w-0">
-                        <!-- Upper Labels -->
-                        <div class="flex gap-1 mb-1">
-                            <span class="text-[10px] font-bold bg-slate-800 text-white px-1.5 py-0.5 rounded" x-text="item.mainCat"></span>
-                            <template x-for="t in item.tags">
-                                <span class="text-[10px] font-medium bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded" x-text="t"></span>
-                            </template>
-                        </div>
-                        
-                        <h3 class="text-sm font-semibold text-slate-900 leading-tight mb-0.5" x-text="item.title"></h3>
-                        <div class="text-[11px] text-slate-400 truncate" x-text="shortLink(item.link)"></div>
-                    </div>
-
-                    <!-- Copy Btn -->
-                    <button @click.stop="copyLink(item.link)" class="text-slate-300 hover:text-blue-500 p-2 ml-1">
-                        <i class="far fa-copy text-lg"></i>
-                    </button>
-                </div>
-            </template>
-        </div>
-        
-        <!-- Empty -->
-        <div x-show="!loading && filteredItems.length === 0" class="text-center py-12 text-slate-400">
-            <i class="fas fa-inbox text-3xl mb-2"></i>
-            <p class="text-sm">No items found.</p>
-        </div>
-    </div>
-
-    <!-- Toast -->
-    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-medium shadow-lg z-50 flex items-center gap-2 pointer-events-none transition-all duration-300 transform"
-         :class="showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'">
-        <i class="fas fa-check text-green-400"></i> <span x-text="toastMessage"></span>
-    </div>
-
-    <!-- Alpine.js (Moved to bottom and deferred) -->
+    <!-- Alpine.js -->
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 
 </body>
