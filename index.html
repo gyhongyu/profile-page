@@ -300,8 +300,8 @@
     <!-- MAIN APP CONTENT (Only visible when authenticated) -->
     <div x-show="authenticated" x-cloak>
         
-        <!-- Header Section -->
-        <div class="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
+        <!-- Header Section (Changed fixed to sticky for better layout) -->
+        <div class="sticky top-0 left-0 right-0 bg-white shadow-sm z-50">
             <!-- 1. Top Bar: Logo & Actions -->
             <div class="px-4 py-2 flex justify-between items-center border-b border-slate-100 bg-white">
                 
@@ -370,8 +370,8 @@
             </div>
         </div>
 
-        <!-- Content List -->
-        <div class="pt-[150px] pb-10 px-4 max-w-2xl mx-auto min-h-screen">
+        <!-- Content List (Removed padding-top 150px) -->
+        <div class="pt-4 pb-10 px-4 max-w-2xl mx-auto min-h-screen">
             
             <!-- Loading -->
             <div x-show="loading" class="text-center py-10 text-slate-400">
