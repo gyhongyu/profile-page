@@ -1,0 +1,21 @@
+{
+  "name": "Foxlink Profile",
+  "short_name": "Foxlink Profile",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "description": "Foxlink Profile",
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://i.postimg.cc/vBNPcWBx/logo-foxlink-b-topaz-enhance-4x.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
